@@ -1,0 +1,255 @@
+from selenium import webdriver
+from bs4 import BeautifulSoup
+
+# Enter the BBC News website's URL.
+url = "https://www.bbc.com/news"
+
+#Set up a Selenium webdriver first. 
+driver = webdriver.Chrome()  # You might need to provide the path to the executable for your webdriver.
+
+# Run the browser and link to the URL.
+driver.get(url)
+
+# once a little while, once the interactive material loads, obtain the page source.
+driver.implicitly_wait(10)
+html = driver.page_source
+
+# Switch off the webdriver.
+driver.quit()
+
+#Use BeautifulSoup to parse the HTML content.
+soup = BeautifulSoup(html, "html.parser")
+
+# Locate and print each headline in the news.
+headlines = soup.find_all("h3", class_="gs-c-promo-heading__title")
+for headline in headlines:
+    print(headline.text.strip())
+
+# Import NLTK (Natural Language Toolkit)
+import nltk
+# Download NLTK resources 
+nltk.download('punkt')
+nltk.download('wordnet')
+nltk.download('stopwords')
+
+# Import spaCy
+import spacy
+
+# Import gensim
+import gensim
+
+# Import TextBlob
+from textblob import TextBlob
+
+# Import scikit-learn
+import sklearn
+
+
+import re
+import nltk
+nltk.download('stopwords')
+nltk.download('punkt')
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
+
+
+# Set up the stopwords and WordNet lemmatizer.
+lemmatizer = WordNetLemmatizer()
+stop_words = set(stopwords.words('english'))
+
+# Text cleaning and preprocessing function
+def preprocess_text(text):
+    # Remove HTML tags
+    clean_text = re.sub('<[^>]*>', '', text)
+    # Remove non-alphanumeric characters and convert to lowercase
+    clean_text = re.sub('[^a-zA-Z0-9]', ' ', clean_text).lower()
+    # Tokenize the text
+    tokens = word_tokenize(clean_text)
+    # Remove stop words and single characters
+    tokens = [word for word in tokens if word not in stop_words and len(word) > 1]
+    # Lemmatize the tokens
+    lemmatized_tokens = [lemmatizer.lemmatize(token) for token in tokens]
+    # Join the tokens back into a single string
+    clean_text = ' '.join(lemmatized_tokens)
+    return clean_text
+
+# Clean and preprocess each headline
+cleaned_headlines = [preprocess_text(headline.text) for headline in headlines]
+
+# Print the cleaned headlines
+print("Cleaned headlines:")
+for headline in cleaned_headlines:
+    print(headline)
+
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Initialize the TF-IDF vectorizer
+tfidf_vectorizer = TfidfVectorizer(max_features=1000)  
+
+# Utilizing the TF-IDF vectorizer, fit and modify the cleaned headlines
+tfidf_matrix = tfidf_vectorizer.fit_transform(cleaned_headlines)
+
+# Convert the TF-IDF matrix to an array
+tfidf_array = tfidf_matrix.toarray()
+
+# Print the shape of the TF-IDF array
+print("TF-IDF array shape:", tfidf_array.shape)
+
+
+from sklearn.cluster import KMeans
+import numpy as np
+
+# Define the number of clusters (topics) based on your requirements
+num_clusters = 4  
+
+# Apply K-means clustering
+kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+cluster_labels = kmeans.fit_predict(tfidf_array)
+
+# Print the cluster labels
+print("Cluster labels:")
+print(cluster_labels)
+
+# Print each cluster's top words.
+print("\nTop words for each cluster:")
+order_centroids = kmeans.cluster_centers_.argsort()[:, ::-1]
+terms = np.array(tfidf_vectorizer.get_feature_names_out()) # Direct access to vocabulary
+for i in range(num_clusters):
+    print("Cluster {}:".format(i))
+    top_words = terms[order_centroids[i, :10]]  # Print each cluster's top ten words.
+    print(top_words)
+
+# Establish subject labels by carefully examining each cluster's articles by hand.
+topic_labels = {
+    0: "Environment",
+    1: "Business",
+    2: "Politics",
+    3: "Culture"
+}
+
+# Print each cluster's chosen topic labels.
+print("Assigned topic labels for each cluster:")
+for cluster_id, topic_label in topic_labels.items():
+    print("Cluster {}: {}".format(cluster_id, topic_label))
+
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import accuracy_score, classification_report
+
+# Assuming that each headline's cluster labels are contained in 'cluster_labels'
+# Split the data into the goal (cluster labels) and features (TF-IDF array).
+X = tfidf_array
+y = cluster_labels
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Initialize and train the classifier (Naive Bayes)
+classifier = MultinomialNB()
+classifier.fit(X_train, y_train)
+
+# Predict the labels for the test set
+y_pred = classifier.predict(X_test)
+
+# Evaluate the model
+accuracy = accuracy_score(y_test, y_pred)
+print("Accuracy:", accuracy)
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+import numpy as np
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Embedding, SpatialDropout1D
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from sklearn.preprocessing import LabelEncoder
+
+# Convert one-hot encoded vectors using cluster labels
+label_encoder = LabelEncoder()
+encoded_labels = label_encoder.fit_transform(cluster_labels)
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(tfidf_array, encoded_labels, test_size=0.2, random_state=42)
+
+# Defining the maximum sequence length
+max_length = 100  
+
+# Pad sequences to ensure consistent duration
+X_train_pad = pad_sequences(X_train, maxlen=max_length, padding='post')
+X_test_pad = pad_sequences(X_test, maxlen=max_length, padding='post')
+
+# Define the LSTM model
+model = Sequential()
+model.add(Embedding(input_dim=X_train_pad.shape[1], output_dim=128, input_length=max_length))
+model.add(SpatialDropout1D(0.2))
+model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
+model.add(Dense(4, activation='softmax'))  # 4 output units for 4 clusters/topics
+
+# Compile the model
+model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+# Train the model
+model.fit(X_train_pad, y_train, epochs=10, batch_size=64, validation_data=(X_test_pad, y_test))
+
+# Evaluate the model
+loss, accuracy = model.evaluate(X_test_pad, y_test)
+print("Accuracy:", accuracy)
+
+
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+#Analyze the classification model's effectiveness using the testing set.
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred, average='weighted')
+recall = recall_score(y_test, y_pred, average='weighted')
+f1 = f1_score(y_test, y_pred, average='weighted')
+
+print("Evaluation Metrics:")
+print("Accuracy:", accuracy)
+print("Precision:", precision)
+print("Recall:", recall)
+print("F1-score:", f1)
+
+import streamlit as st
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+import numpy as np
+
+# Define the classification model
+classifier = MultinomialNB()  # Initialize the Naive Bayes classifier
+
+# Function to preprocess text
+def preprocess_text(text):
+    # Write your preprocessing code here
+    return text
+
+# Function to predict the topic
+def predict_topic(text):
+    # Preprocess the text
+    processed_text = preprocess_text(text)
+    # Vectorize the text using the TF-IDF vectorizer
+    tfidf_vectorizer = TfidfVectorizer()  # You should initialize the vectorizer with the same parameters used during training
+    text_vectorized = tfidf_vectorizer.transform([processed_text])
+    # Predict the topic
+    topic_prediction = classifier.predict(text_vectorized)[0]
+    return topic_prediction
+
+# Streamlit UI
+st.title('News Topic Classifier')
+
+# Input text area for user input
+user_input = st.text_area("Enter the news headline:", "")
+
+# Button to trigger prediction
+if st.button('Predict'):
+    # Perform prediction
+    topic_prediction = predict_topic(user_input)
+    topics = {
+        0: "Environment",
+        1: "Business",
+        2: "Politics",
+        3: "Culture"
+    }
+    predicted_topic = topics.get(topic_prediction, "Unknown")
+    st.write('Predicted Topic:', predicted_topic)
